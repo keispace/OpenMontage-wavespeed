@@ -446,3 +446,177 @@ def test_unsupported_task_type(tmp_path):
             "unsupported_task",
             config_path=config_path,
         )
+
+
+def test_text_to_audio_profile_resolution(tmp_path):
+    """text_to_audio resolution: only profiles with a non-empty model_id are candidates."""
+    config_path = write_config(
+        tmp_path,
+        """
+        wavespeed:
+          active_profile: null
+          profiles:
+            default:
+              text_to_audio:
+                model_id: ""
+                params: {}
+            quality:
+              text_to_audio:
+                model_id: "elevenlabs/multilingual-v2"
+                params: {language: "en", voice_stability: 0.75}
+        """,
+    )
+
+    candidates = get_wavespeed_candidates_for_task("text_to_audio", config_path)
+    assert len(candidates) == 1
+    assert {p for _, p in candidates} == {"quality"}
+
+
+def test_avatar_profile_resolution(tmp_path):
+    """digital_human resolution: empty default excluded, populated quality kept."""
+    config_path = write_config(
+        tmp_path,
+        """
+        wavespeed:
+          active_profile: null
+          profiles:
+            default:
+              digital_human:
+                model_id: ""
+                params: {}
+            quality:
+              digital_human:
+                model_id: "heygen/avatar-v/digital-twin"
+                params: {quality: "high"}
+        """,
+    )
+
+    candidates = get_wavespeed_candidates_for_task("digital_human", config_path)
+    assert len(candidates) == 1
+    assert any("heygen" in m.lower() for m, _ in candidates)
+
+
+def test_audio_and_avatar_tools_discoverable_by_capability():
+    """Regression guard: these tools must declare a real capability/provider so
+    selectors and capability lookups find them, not the BaseTool 'generic' default."""
+    from tools.tool_registry import registry
+    from tools.audio.wavespeed_text_to_audio import WaveSpeedTextToAudio
+    from tools.avatar.wavespeed_digital_human import WaveSpeedDigitalHuman
+
+    assert WaveSpeedTextToAudio.capability == "tts"
+    assert WaveSpeedTextToAudio.provider == "wavespeed"
+    assert WaveSpeedDigitalHuman.capability == "avatar"
+    assert WaveSpeedDigitalHuman.provider == "wavespeed"
+
+    registry.discover()
+    tts_names = {t.name for t in registry.get_by_capability("tts")}
+    avatar_names = {t.name for t in registry.get_by_capability("avatar")}
+    assert "wavespeed_text_to_audio" in tts_names
+    assert "wavespeed_digital_human" in avatar_names
+
+
+def test_additional_type_tools_discoverable_by_capability():
+    """image_edit, image_upscale, text_to_music must map to real project capabilities."""
+    from tools.tool_registry import registry
+    from tools.graphics.wavespeed_image_edit import WaveSpeedImageEdit
+    from tools.enhancement.wavespeed_image_upscale import WaveSpeedImageUpscale
+    from tools.audio.wavespeed_text_to_music import WaveSpeedTextToMusic
+
+    assert (WaveSpeedImageEdit.capability, WaveSpeedImageEdit.provider) == (
+        "image_generation",
+        "wavespeed",
+    )
+    assert (WaveSpeedImageUpscale.capability, WaveSpeedImageUpscale.provider) == (
+        "enhancement",
+        "wavespeed",
+    )
+    assert (WaveSpeedTextToMusic.capability, WaveSpeedTextToMusic.provider) == (
+        "music_generation",
+        "wavespeed",
+    )
+
+    registry.discover()
+    assert "wavespeed_image_edit" in {t.name for t in registry.get_by_capability("image_generation")}
+    assert "wavespeed_image_upscale" in {t.name for t in registry.get_by_capability("enhancement")}
+    assert "wavespeed_text_to_music" in {t.name for t in registry.get_by_capability("music_generation")}
+
+
+def test_image_upscale_prompt_optional_but_image_required(tmp_path):
+    """Upscale needs no prompt but does need a source image (helper generalization)."""
+    from tools.enhancement.wavespeed_image_upscale import WaveSpeedImageUpscale
+
+    result = WaveSpeedImageUpscale().execute({"output_dir": str(tmp_path)})
+    assert not result.success
+    # Fails on missing image, NOT on missing prompt.
+    assert "requires image" in (result.error or "").lower()
+
+
+def test_background_removal_and_lipsync_discoverable_by_capability():
+    from tools.tool_registry import registry
+    from tools.enhancement.wavespeed_background_removal import WaveSpeedBackgroundRemoval
+    from tools.avatar.wavespeed_lip_sync import WaveSpeedLipSync
+
+    assert (WaveSpeedBackgroundRemoval.capability, WaveSpeedBackgroundRemoval.provider) == (
+        "enhancement",
+        "wavespeed",
+    )
+    assert (WaveSpeedLipSync.capability, WaveSpeedLipSync.provider) == ("avatar", "wavespeed")
+
+    registry.discover()
+    assert "wavespeed_background_removal" in {t.name for t in registry.get_by_capability("enhancement")}
+    assert "wavespeed_lip_sync" in {t.name for t in registry.get_by_capability("avatar")}
+
+
+def test_lip_sync_requires_audio_after_image(tmp_path):
+    """lip_sync needs both image and audio; with image present it must ask for audio."""
+    from tools.avatar.wavespeed_lip_sync import WaveSpeedLipSync
+
+    result = WaveSpeedLipSync().execute(
+        {"image_url": "https://example.com/face.png", "output_dir": str(tmp_path)}
+    )
+    assert not result.success
+    assert "requires audio" in (result.error or "").lower()
+
+
+def test_image_selector_selects_wavespeed_when_preferred(monkeypatch):
+    """End-to-end routing: with the key set, an explicit wavespeed preference
+    resolves to a WaveSpeed provider through the selector's real selection path."""
+    monkeypatch.setenv("WAVESPEED_API_KEY", "test-key")
+    from tools.tool_registry import registry
+    from tools.graphics.image_selector import ImageSelector
+
+    registry.discover()
+    sel = ImageSelector()
+    candidates = sel._providers()
+    assert any(t.provider == "wavespeed" for t in candidates), "wavespeed not in image pool"
+
+    tool, _score = sel._select_best_tool(
+        {"prompt": "a calico cat", "preferred_provider": "wavespeed"},
+        candidates,
+        sel._prepare_task_context({"prompt": "a calico cat"}),
+    )
+    assert tool is not None
+    assert tool.provider == "wavespeed"
+
+
+def test_text_to_audio_maps_text_alias_to_prompt(monkeypatch):
+    """tts_selector routes with `text`; the tool must normalize it to `prompt`."""
+    from tools.audio.wavespeed_text_to_audio import WaveSpeedTextToAudio
+
+    captured = {}
+
+    def fake_run(*, task_type, asset_type, inputs, client=None):
+        captured["task_type"] = task_type
+        captured["asset_type"] = asset_type
+        captured["prompt"] = inputs.get("prompt")
+        return wavespeed_generation.ToolResult(success=True, data={})
+
+    monkeypatch.setattr(
+        "tools.audio.wavespeed_text_to_audio.run_wavespeed_generation", fake_run
+    )
+    WaveSpeedTextToAudio().execute({"text": "hello world"})
+    assert captured == {
+        "task_type": "text_to_audio",
+        "asset_type": "audio",
+        "prompt": "hello world",
+    }

@@ -1,7 +1,7 @@
 # WaveSpeed Provider
 
 WaveSpeed is a multi-model AI generation provider for OpenMontage.
-It supports image generation and video generation.
+It supports image generation, video generation, audio/TTS, and digital human (avatar) video creation.
 
 ## How model selection works
 
@@ -15,6 +15,13 @@ It supports image generation and video generation.
 - `text_to_image`: Generate images from text descriptions
 - `image_to_video`: Generate video from image + motion prompt
 - `text_to_video`: Generate video directly from text prompt
+- `text_to_audio`: Text-to-speech (TTS) and music generation
+- `digital_human`: Digital human/avatar video generation
+- `image_edit`: Edit / image-to-image from a source image + instruction
+- `image_upscale`: Super-resolution / upscaling of a source image
+- `text_to_music`: Music generation from a text prompt
+- `background_removal`: Background/object removal from a source image
+- `lip_sync`: Lip-sync a portrait image to an audio track
 
 Each task type has model IDs configured in the active WaveSpeed profile.
 
@@ -62,6 +69,27 @@ wavespeed:
       text_to_video:
         model_id: "..."
         params: {}
+      text_to_audio:
+        model_id: "..."
+        params: {}
+      digital_human:
+        model_id: "..."
+        params: {}
+      image_edit:
+        model_id: "..."
+        params: {}
+      image_upscale:
+        model_id: "..."
+        params: {}
+      text_to_music:
+        model_id: "..."
+        params: {}
+      background_removal:
+        model_id: "..."
+        params: {}
+      lip_sync:
+        model_id: "..."
+        params: {}
 ```
 
 ### Profile Selection
@@ -77,7 +105,7 @@ They still compete with other providers (FAL, OpenAI, etc.) by score, but WaveSp
 
 For every WaveSpeed generation task:
 
-1. **Identify task type:** `text_to_image`, `image_to_video`, or `text_to_video`.
+1. **Identify task type:** `text_to_image`, `image_to_video`, `text_to_video`, `text_to_audio`, `digital_human`, `image_edit`, `image_upscale`, `text_to_music`, `background_removal`, or `lip_sync`.
 2. **Load active profile:** Determined by `wavespeed.active_profile` in config.yaml.
 3. **Resolve model_id:**
    - Explicit `--model-id` argument (one-task override) → use it
@@ -91,9 +119,21 @@ For every WaveSpeed generation task:
 
 Registry-discovered tools (auto-discoverable from Python):
 
-- `wavespeed_text_to_image`: Text → Image
-- `wavespeed_image_to_video`: Image + motion prompt → Video
-- `wavespeed_text_to_video`: Text → Video
+**Image/Video Generation:**
+- `wavespeed_text_to_image`: Text → Image (capability `image_generation`)
+- `wavespeed_image_to_video`: Image + motion prompt → Video (capability `video_generation`)
+- `wavespeed_text_to_video`: Text → Video (capability `video_generation`)
+
+**Audio + Digital Human:**
+- `wavespeed_text_to_audio`: Text → Audio, TTS/music (capability `tts`; discovered by `tts_selector`)
+- `wavespeed_digital_human`: Text → Digital human video (capability `avatar`)
+- `wavespeed_lip_sync`: Image + audio → talking video (capability `avatar`)
+
+**Editing / Enhancement / Music:**
+- `wavespeed_image_edit`: Image + instruction → edited Image (capability `image_generation`)
+- `wavespeed_image_upscale`: Image → upscaled Image (capability `enhancement`)
+- `wavespeed_background_removal`: Image → cutout Image (capability `enhancement`)
+- `wavespeed_text_to_music`: Text → Music (capability `music_generation`)
 
 All tools:
 - Read active profile from `config.yaml`
@@ -127,6 +167,22 @@ python -m tools.video.wavespeed_image_to_video \
 ```bash
 python -m tools.video.wavespeed_text_to_video \
   --prompt "A 5-second cinematic macro shot of a data center cooling aisle, controlled dolly movement" \
+  --output-dir projects/example/assets/video
+```
+
+**Text to audio (TTS/music):**
+
+```bash
+python -m tools.wavespeed_text_to_audio \
+  --prompt "Professional voiceover: Clear, warm male voice explaining quantum computing fundamentals" \
+  --output-dir projects/example/assets/audio
+```
+
+**Digital human video:**
+
+```bash
+python -m tools.wavespeed_digital_human \
+  --prompt "Professional female presenter in business suit, modern office, delivering a 30-second product pitch" \
   --output-dir projects/example/assets/video
 ```
 
@@ -225,6 +281,13 @@ SUPPORTED_TASK_TYPES = {
     "text_to_image",
     "image_to_video",
     "text_to_video",
+    "text_to_audio",
+    "digital_human",
+    "image_edit",
+    "image_upscale",
+    "text_to_music",
+    "background_removal",
+    "lip_sync",
     "new_task_type",  # ← Add here
 }
 ```

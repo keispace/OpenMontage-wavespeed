@@ -14,6 +14,13 @@ SUPPORTED_TASK_TYPES = {
     "text_to_image",
     "image_to_video",
     "text_to_video",
+    "text_to_audio",
+    "digital_human",
+    "image_edit",
+    "image_upscale",
+    "text_to_music",
+    "background_removal",
+    "lip_sync",
 }
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
@@ -26,7 +33,6 @@ class WaveSpeedConfigError(ValueError):
 class WaveSpeedTaskConfig:
     """Resolved WaveSpeed config for one generation task."""
 
-    mode: str
     profile: str
     task_type: str
     model_id: str
@@ -159,7 +165,6 @@ def resolve_wavespeed_task(
         merged_params.update(explicit_params)
 
     return WaveSpeedTaskConfig(
-        mode=str(wavespeed.get("mode") or "wavespeed_only"),
         profile=profile_name,
         task_type=task_type,
         model_id=model_id,
