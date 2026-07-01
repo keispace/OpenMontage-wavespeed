@@ -1,10 +1,14 @@
-PYTHON ?= python3
-
 .PHONY: setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm wavespeed-doctor
 
 # ---- One-command setup ----
+PYTHON ?= .venv/bin/python
 
-setup:
+.venv/bin/python:
+	python3 -m venv .venv
+	.venv/bin/python -m pip install --upgrade pip setuptools wheel
+
+
+setup: .venv/bin/python
 	@echo "==> Installing Python dependencies..."
 	$(PYTHON) -m pip install -r requirements.txt
 	@echo ""
